@@ -1,8 +1,12 @@
 # Mezo Flow
 
-**Cross-Chain Yield Aggregator for MUSD and MEZO**
+**Auto-compounding MUSD yield vault on Mezo.**
 
-Your Bitcoin-backed capital, working harder across every chain.
+Mezo Flow is an ERC-4626 vault that accepts MUSD deposits, routes them into Mezo's
+MUSD Savings Vault, and lets users withdraw at any time. Yield is automatically
+reflected in the share price, so users earn without doing anything.
+
+Built for the **Mezo Buildathon — Wave 1 (Track 1: DeFi)**.
 
 ---
 
@@ -16,7 +20,9 @@ Built for the Mezo Buildathon (Track 1: DeFi).
 
 ## The Problem
 
-MUSD and MEZO are powerful assets, but their yield opportunities are fragmented:
+MUSD holders on Mezo can earn yield through the native MUSD Savings Vault, but the
+process is manual: deposit, monitor, claim, compound, repeat. There is no simple
+auto-compounding vault that turns MUSD into a set-and-forget productive asset.
 
 - **MUSD Savings Vault** on Mezo offers native yield, but only on Mezo.
 - **Curve and Uniswap pools** on Ethereum offer MUSD liquidity, but require bridging and manual management.
@@ -25,17 +31,55 @@ MUSD and MEZO are powerful assets, but their yield opportunities are fragmented:
 
 Users who want to earn yield on their Bitcoin-backed capital must manually bridge, swap, deposit, monitor, claim, and compound across four chains. Most don't bother.
 
+## The Solution
+
 **Mezo Flow solves this.**
+
+Mezo Flow v1 is an ERC-4626-style vault deployed on Mezo Testnet.
+
+- Users deposit MUSD and receive `mzFLOW-MUSD` receipt tokens.
+- The vault routes deposited MUSD into the MUSD Savings Vault.
+- Yield is harvested and compounded at a configurable interval.
+- Users can withdraw at any time by burning their receipt tokens.
 
 ---
 
 ## How It Works
 
-1. **Deposit** MUSD or MEZO on any supported chain.
-2. **Router** evaluates live yield opportunities across whitelisted venues.
-3. **Cross-chain deployment** via Wormhole NTT moves capital natively to the best venue.
-4. **Auto-compounding** harvests and reinvests yield at configurable intervals.
-5. **Withdraw** anytime—receive principal plus yield, bridged back to your preferred chain.
+### Deposit
+1. User approves MUSD to the vault.
+2. `deposit(assets, receiver)` transfers MUSD and mints shares.
+3. Vault deploys idle MUSD into the MUSD Savings Vault.
+4. `totalAssets()` = idle MUSD + value of savings vault shares.
+
+### Withdraw
+1. User calls `withdraw(assets, receiver, owner)`.
+2. Vault pulls MUSD from savings vault if idle is insufficient.
+3. Base ERC-4626 logic burns shares and transfers MUSD.
+4. No lockups — users exit anytime.
+
+### Harvest
+- Compounding happens automatically because yield accrues in the share price of the
+savings vault shares that Mezo Flow holds.
+- `harvest()` records profit against a high-water mark and takes a performance fee
+(default 10%) to the treasury.
+- `harvestInterval` (default 24h) prevents front-running the fee.
+
+## Security
+- OpenZeppelin ERC-4626, Ownable, ReentrancyGuard, Pausable.
+- `nonReentrant` on `_deposit`, `_withdraw`, and `harvest`.
+- Performance fee capped at 20%.
+- Owner-gated admin: `setSavingsVault`, `setPerformanceFee`, `setTreasury`,
+`setHarvestInterval`, `setAutoDeploy`, `pause`, `unpause`, `emergencyWithdrawAll`.
+- `rescueTokens` cannot touch the vault's own asset.
+- Test coverage for deposits, withdrawals, yield accrual, harvest, and admin paths.
+
+## Why It Matters
+
+- **Composable:** Standard ERC-4626 interface — other protocols can integrate it.
+- **Extends MUSD utility:** Turns MUSD into a productive, yield-bearing asset.
+- **Plugs into Mezo's stack:** Builds on Mezo's MUSD Savings Vault instead of competing with it.
+- **Extensible:** Wave 2 adds MEZO vaults and cross-chain MUSD via Wormhole NTT.
 
 ### Supported Chains
 
@@ -90,6 +134,13 @@ Users who want to earn yield on their Bitcoin-backed capital must manually bridg
 │ Vault │ │ Curve │ │Aerodrome │ │PancakeSwap│
 └──────────┘ └──────────┘ └──────────┘ └──────────┘
 ```
+```plaintext
+User → MezoFlowVault (ERC-4626) → MUSD Savings Vault
+│
+├── Receipt token: mzFLOW-MUSD
+├── Harvest controller (auto-compound, fees)
+└── Idle MUSD buffer for fast withdrawals
+```
 
 ---
 
@@ -133,6 +184,8 @@ npx hardhat compile
 npx hardhat test
 ```
 ### Deploy to Mezo Testnet
+1. Get test BTC and MEZO from the Mezo Faucet.
+2. Borrow MUSD at testnet.mezo.org.
 ```bash
 npx hardhat run scripts/deploy.js --network mezoTestnet
 ```
@@ -140,14 +193,20 @@ npx hardhat run scripts/deploy.js --network mezoTestnet
 ```bash
 npx hardhat run scripts/deploy.js --network baseTestnet
 ```
+### Frontend
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
 ## Contract Addresses (Mezo Testnet)
-| Contract | Address |
-|----------|---------|
-| MezoFlowVault |	0x... (deployed) |
-| YieldRouter |	0x... (deployed) |
-| MUSD Token | 0x1189...Ac503 |
-| MEZO Token | 0x... |
+| Contract | Purpose |
+|---|---|
+| `MezoFlowVault.sol` | Main ERC-4626 vault |
+| `ISavingsVault.sol` | Interface for Mezo's MUSD Savings Vault |
+| `MockMUSD.sol` | Local test MUSD |
+| `MockSavingsVault.sol` | Local test savings vault |
 
 ## Usage
 ### Deposit MUSD
@@ -170,18 +229,25 @@ uint256 currentAPY = router.getCurrentAPY(asset);
 
 ## Roadmap
 - [x] Core vault contracts
-- [x] Wormhole NTT integration
 - [x] Mezo Testnet deployment
+- [x] MUSD vault on Mezo Testnet
 - [ ] Base Testnet deployment
 - [ ] Ethereum and BNB Chain support
 - [ ] MEZO staking derivative integration
 - [ ] Governance and veMEZO voting
 - [ ] Institutional vaults
+- [ ] MEZO vault support
+- [ ] Cross-chain MUSD via Wormhole NTT
+- [ ] Yield router with Pyth/Supra oracles
+- [ ] Mainnet deployment on Mezo and Base
 
 ## Links
 - Live Demo: 
 - GitHub: https://github.com/GauravKarakoti/mezo-flow
-- Mezo Docs: https://mezo.org/docs
+- Mezo Docs: https://mezo.org/docs/developers/
 - Discord: https://discord.mezo.org
+- Mezo Testnet dApp: https://testnet.mezo.org
+- Faucet: https://faucet.test.mezo.org/
+- Mezo GitHub: https://github.com/mezo-org
 
 Built for the Mezo Buildathon - Bank on yourself. Build on Bitcoin.
