@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useAccount,
   useReadContract,
@@ -31,21 +31,29 @@ export default function DepositForm() {
   const { writeContract: approve, data: approveHash } = useWriteContract();
   const { writeContract: deposit, data: depositHash } = useWriteContract();
 
-  const { isLoading: approving } = useWaitForTransactionReceipt({
-    hash: approveHash,
-    query: { onSuccess: () => refetchAllowance() },
-  });
+  const { isLoading: approving, isSuccess: approved } =
+    useWaitForTransactionReceipt({
+      hash: approveHash,
+    });
 
-  const { isLoading: depositing } = useWaitForTransactionReceipt({
-    hash: depositHash,
-    query: {
-      onSuccess: () => {
-        setAmount("");
-        refetchBalance();
-        refetchAllowance();
-      },
-    },
-  });
+  const { isLoading: depositing, isSuccess: deposited } =
+    useWaitForTransactionReceipt({
+      hash: depositHash,
+    });
+
+  useEffect(() => {
+    if (approved) {
+      refetchAllowance();
+    }
+  }, [approved, refetchAllowance]);
+
+  useEffect(() => {
+    if (deposited) {
+      setAmount("");
+      refetchBalance();
+      refetchAllowance();
+    }
+  }, [deposited, refetchBalance, refetchAllowance]);
 
   const parsed = amount ? parseEther(amount) : 0n;
   const needsApproval = allowance !== undefined && parsed > allowance;
@@ -82,7 +90,13 @@ export default function DepositForm() {
         Balance: {balance ? Number(formatEther(balance)).toLocaleString() : "0"} MUSD
       </div>
       <button onClick={handleDeposit} disabled={!amount || approving || depositing}>
-        {approving ? "Approving..." : depositing ? "Depositing..." : needsApproval ? "Approve MUSD" : "Deposit"}
+        {approving
+          ? "Approving..."
+          : depositing
+            ? "Depositing..."
+            : needsApproval
+              ? "Approve MUSD"
+              : "Deposit"}
       </button>
     </div>
   );

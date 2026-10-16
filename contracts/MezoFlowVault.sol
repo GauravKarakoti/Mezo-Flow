@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -85,10 +85,10 @@ contract MezoFlowVault is ERC4626, Ownable, ReentrancyGuard, Pausable {
         uint256 assets,
         uint256 shares
     ) internal override nonReentrant whenNotPaused {
-        // Base implementation transfers MUSD in and mints shares out.
         super._deposit(caller, receiver, assets, shares);
 
-        // Deploy idle MUSD into the savings vault.
+        highWaterMark += assets;
+
         if (autoDeploy && assets > 0) {
             _deployToSavingsVault(assets);
         }
@@ -101,13 +101,13 @@ contract MezoFlowVault is ERC4626, Ownable, ReentrancyGuard, Pausable {
         uint256 assets,
         uint256 shares
     ) internal override nonReentrant {
-        // Ensure vault has enough idle MUSD to cover the withdrawal.
         uint256 idle = IERC20(asset()).balanceOf(address(this));
         if (idle < assets) {
             _withdrawFromSavingsVault(assets - idle);
         }
 
-        // Base implementation spends allowance, burns shares, transfers MUSD.
+        highWaterMark = highWaterMark > assets ? highWaterMark - assets : 0;
+
         super._withdraw(caller, receiver, owner, assets, shares);
     }
 
@@ -126,7 +126,7 @@ contract MezoFlowVault is ERC4626, Ownable, ReentrancyGuard, Pausable {
         uint256 vaultValue = savingsVault.convertToAssets(shares);
         if (vaultValue == 0) return;
 
-        uint256 sharesToRedeem = (amount * shares) / vaultValue;
+        uint256 sharesToRedeem = (amount * shares + vaultValue - 1) / vaultValue;
         if (sharesToRedeem > shares) sharesToRedeem = shares;
 
         savingsVault.redeem(sharesToRedeem, address(this), address(this));
@@ -135,9 +135,6 @@ contract MezoFlowVault is ERC4626, Ownable, ReentrancyGuard, Pausable {
     // ---------------------------------------------------------------------
     // Harvest
     // ---------------------------------------------------------------------
-    /// @notice Records profit since the last high-water mark and takes a performance fee.
-    /// @dev Because the savings vault is share-price based, yield is already reflected
-    ///      in totalAssets(). Harvest is used for fee accounting and event emission.
     function harvest() external nonReentrant returns (uint256 profit, uint256 fee) {
         require(block.timestamp >= lastHarvest + harvestInterval, "Harvest too soon");
 
@@ -189,7 +186,6 @@ contract MezoFlowVault is ERC4626, Ownable, ReentrancyGuard, Pausable {
         require(address(_newVault) != address(0), "Invalid vault");
         require(_newVault.asset() == asset(), "Asset mismatch");
 
-        // Pull all capital back into the vault before switching.
         _withdrawAllFromSavingsVault();
 
         savingsVault = _newVault;
@@ -241,13 +237,11 @@ contract MezoFlowVault is ERC4626, Ownable, ReentrancyGuard, Pausable {
         _unpause();
     }
 
-    /// @notice Pull all capital out of the savings vault in an emergency.
     function emergencyWithdrawAll() external onlyOwner {
         _withdrawAllFromSavingsVault();
         emit EmergencyWithdraw(IERC20(asset()).balanceOf(address(this)));
     }
 
-    /// @notice Rescue tokens accidentally sent to the vault. Cannot rescue the asset.
     function rescueTokens(IERC20 token, address to, uint256 amount) external onlyOwner {
         require(address(token) != asset(), "Cannot rescue asset");
         SafeERC20.safeTransfer(token, to, amount);

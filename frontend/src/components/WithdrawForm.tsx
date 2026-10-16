@@ -1,5 +1,10 @@
-import { useState } from "react";
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
+import { useState, useEffect } from "react";
+import {
+  useAccount,
+  useWriteContract,
+  useWaitForTransactionReceipt,
+  useReadContract,
+} from "wagmi";
 import { parseEther } from "viem";
 import { vaultAbi, VAULT_ADDRESS } from "../abi";
 
@@ -8,7 +13,7 @@ export default function WithdrawForm() {
   const [amount, setAmount] = useState("");
 
   const { writeContract, data: hash } = useWriteContract();
-  const { isLoading } = useWaitForTransactionReceipt({ hash });
+  const { isLoading, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   const { refetch: refetchShares } = useReadContract({
     address: VAULT_ADDRESS,
@@ -17,6 +22,13 @@ export default function WithdrawForm() {
     args: address ? [address] : undefined,
     query: { enabled: !!address },
   });
+
+  useEffect(() => {
+    if (isSuccess) {
+      setAmount("");
+      refetchShares();
+    }
+  }, [isSuccess, refetchShares]);
 
   const handleWithdraw = () => {
     if (!address || !amount) return;
@@ -40,7 +52,9 @@ export default function WithdrawForm() {
       <button onClick={handleWithdraw} disabled={!amount || isLoading}>
         {isLoading ? "Withdrawing..." : "Withdraw"}
       </button>
-      <div className="hint">Withdrawals return MUSD to your wallet from the savings vault.</div>
+      <div className="hint">
+        Withdrawals return MUSD to your wallet from the savings vault.
+      </div>
     </div>
   );
 }

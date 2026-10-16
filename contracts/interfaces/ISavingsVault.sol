@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 /// @title ISavingsVault
 /// @notice Minimal ERC-4626-compatible interface for Mezo's MUSD Savings Vault.

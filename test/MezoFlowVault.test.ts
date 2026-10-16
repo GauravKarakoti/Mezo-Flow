@@ -1,27 +1,29 @@
 import { expect } from "chai";
-import { ethers } from "hardhat";
-import { loadFixture, time } from "@nomicfoundation/hardhat-toolbox/network-helpers";
+import { network } from "hardhat";
+
+const { ethers, networkHelpers } = await network.connect();
+const { loadFixture, time } = networkHelpers;
 
 describe("MezoFlowVault", function () {
   async function deployFixture() {
     const [owner, alice, bob, treasury] = await ethers.getSigners();
 
     const MockMUSD = await ethers.getContractFactory("MockMUSD");
-    const musd = await MockMUSD.deploy();
+    const musd = (await MockMUSD.deploy()) as any;
     await musd.waitForDeployment();
 
     const MockSavingsVault = await ethers.getContractFactory("MockSavingsVault");
-    const savings = await MockSavingsVault.deploy(await musd.getAddress());
+    const savings = (await MockSavingsVault.deploy(await musd.getAddress())) as any;
     await savings.waitForDeployment();
 
     const Vault = await ethers.getContractFactory("MezoFlowVault");
-    const vault = await Vault.deploy(
+    const vault = (await Vault.deploy(
       await musd.getAddress(),
       await savings.getAddress(),
       treasury.address,
       "Mezo Flow MUSD",
       "mzFLOW-MUSD"
-    );
+    )) as any;
     await vault.waitForDeployment();
 
     // Seed Alice and Bob with MUSD
@@ -132,7 +134,7 @@ describe("MezoFlowVault", function () {
       const { vault, alice } = await loadFixture(deployFixture);
       await expect(
         vault.connect(alice).withdraw(ethers.parseEther("1"), alice.address, alice.address)
-      ).to.be.reverted;
+      ).to.be.revert(ethers);
     });
   });
 
@@ -214,7 +216,7 @@ describe("MezoFlowVault", function () {
   describe("Admin", function () {
     it("only owner can set performance fee", async function () {
       const { vault, alice } = await loadFixture(deployFixture);
-      await expect(vault.connect(alice).setPerformanceFee(500)).to.be.reverted;
+      await expect(vault.connect(alice).setPerformanceFee(500)).to.be.revert(ethers);
     });
 
     it("caps performance fee at 20%", async function () {
@@ -229,7 +231,7 @@ describe("MezoFlowVault", function () {
       await musd.connect(alice).approve(await vault.getAddress(), ethers.parseEther("1"));
       await expect(
         vault.connect(alice).deposit(ethers.parseEther("1"), alice.address)
-      ).to.be.reverted;
+      ).to.be.revert(ethers);
 
       await vault.unpause();
       await vault.connect(alice).deposit(ethers.parseEther("1"), alice.address);
